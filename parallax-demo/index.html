@@ -296,6 +296,30 @@
             // property mangler (vite.config.js:112, /^_(?!markers$|360$|meta$)/)
             // precisely because it arrives as external JSON.
             _markers: { zoomOutAfterClose: true },
+
+            // Breathing room around the house.
+            //
+            // Without these the demo opens pinned at minimum zoom, where the view *is*
+            // the whole canvas — so dragging does nothing at all and the only way to
+            // move is to zoom in first. Two settings fix that, both public
+            // (info.ts:144, :198):
+            //
+            // `view` is the starting viewport: a centred 82% of the canvas, which leaves
+            // ~18% of slack to drag into straight away and still lets you zoom back out
+            // to the full scene. Its width and height are equal fractions so the rect
+            // keeps the canvas aspect and frames predictably on any screen. Centred
+            // slightly below middle (0.60) because the scene sits in the lower half —
+            // the sky above the roof is empty gradient.
+            //
+            // `freeMove` lifts the hard clamp to the image bounds, which is also how the
+            // three.js reference behaves: there MapControls pans unbounded and the
+            // gradient plane never fills the frame (it's 7.9 x 11.1 world units against
+            // a ~16 x 9 visible frame), with CSS sky-blue showing beyond the artwork —
+            // here the body's #050914 plays that role. Drop it if you want the camera
+            // hard-bounded to the canvas instead; `dragElasticity` tunes the drag feel
+            // either way.
+            view: [0.09, 0.19, 0.82, 0.82],
+            freeMove: true,
           },
         });
 
