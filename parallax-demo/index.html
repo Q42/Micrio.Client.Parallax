@@ -263,6 +263,10 @@
           ],
         ];
 
+        // How far past the canvas edges the camera may roam, as a fraction of the canvas.
+        // Asymmetric on purpose — see the `restrict` note below.
+        const PAN_PAD = { x: 0.18, top: 0.25, bottom: 0.08 };
+
         const image = await micrio.open({
           id: "sky",
           info: info("sky", CW, CH, "png"),
@@ -311,15 +315,27 @@
             // slightly below middle (0.60) because the scene sits in the lower half —
             // the sky above the roof is empty gradient.
             //
-            // `freeMove` lifts the hard clamp to the image bounds, which is also how the
-            // three.js reference behaves: there MapControls pans unbounded and the
-            // gradient plane never fills the frame (it's 7.9 x 11.1 world units against
-            // a ~16 x 9 visible frame), with CSS sky-blue showing beyond the artwork —
-            // here the body's #050914 plays that role. Drop it if you want the camera
-            // hard-bounded to the canvas instead; `dragElasticity` tunes the drag feel
-            // either way.
+            // `restrict` (info.ts:146) is the navigation bounds. Despite the name it is
+            // not limited to *narrowing* them: setLimit -> view._setLimit (shared.ts:140)
+            // stores the rect with no clamp to [0,1], and a limit wider than the image
+            // is side-effect free — the _coverScale correction at camera-2d.ts:158 only
+            // runs when the limit is narrower (`_lWidth < 1`), and _correctMinMax derives
+            // minScale from `focus`/canvas, not from the limit. So the camera stays
+            // properly bounded (it can't be yeeted into the void, and it still snaps
+            // back) while getting far more room than the canvas itself.
+            //
+            // Padding is deliberately asymmetric: generous above, where there is only
+            // sky, and slim below, where panning past the edge exposes the underside of
+            // the snow. The artwork doesn't extend into this margin yet, so the body's
+            // #050914 shows through at the extremes — that's a known graphics gap, not
+            // the camera misbehaving.
+            //
+            // (`freeMove` — info.ts:198 — is the other option here and matches the
+            // three.js reference, where MapControls pans unbounded. But it removes the
+            // bounds entirely rather than widening them, so the scene can be dragged
+            // fully off-screen with nothing pulling it back.)
             view: [0.09, 0.19, 0.82, 0.82],
-            freeMove: true,
+            restrict: [-PAN_PAD.x, -PAN_PAD.top, 1 + PAN_PAD.x * 2, 1 + PAN_PAD.top + PAN_PAD.bottom],
           },
         });
 
