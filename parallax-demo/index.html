@@ -52,6 +52,121 @@
         color: #9cf;
         text-align: right;
       }
+
+      /* POI overlay — transparent to pointer events so drag/zoom still reaches the
+         canvas; only the badges themselves are clickable. */
+      #pois {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 500;
+      }
+      .poi {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 34px;
+        height: 34px;
+        margin: 0;
+        padding: 0;
+        border: 2px solid rgba(255, 255, 255, 0.85);
+        border-radius: 50%;
+        background: rgba(12, 18, 32, 0.55);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        color: #fff;
+        font:
+          600 15px/1 -apple-system,
+          sans-serif;
+        cursor: pointer;
+        pointer-events: auto;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+        /* No transition on `transform` — it's the per-frame position, and easing it
+           would make badges lag behind the artwork while panning. */
+        transition:
+          background 0.18s,
+          box-shadow 0.18s;
+      }
+      .poi:hover {
+        background: rgba(255, 196, 92, 0.9);
+        color: #1a1206;
+      }
+      .poi.open {
+        background: #ffc45c;
+        color: #1a1206;
+        border-color: #fff;
+        box-shadow: 0 0 0 6px rgba(255, 196, 92, 0.25);
+      }
+      /* A soft pulse so the badges read as "there is something here" */
+      .poi::after {
+        content: "";
+        position: absolute;
+        inset: -2px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 196, 92, 0.75);
+        animation: poiPulse 2.6s ease-out infinite;
+        pointer-events: none;
+      }
+      .poi.open::after {
+        display: none;
+      }
+      @keyframes poiPulse {
+        0% {
+          transform: scale(1);
+          opacity: 0.75;
+        }
+        70%,
+        100% {
+          transform: scale(1.85);
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .poi::after {
+          animation: none;
+        }
+      }
+
+      #panel {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 1000;
+        width: 260px;
+        padding: 16px 18px;
+        border-radius: 12px;
+        background: rgba(10, 14, 25, 0.9);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        color: #eee;
+        font:
+          14px/1.5 -apple-system,
+          sans-serif;
+        cursor: pointer;
+      }
+      #panel .tag {
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 2px 8px;
+        border-radius: 99px;
+        background: rgba(255, 196, 92, 0.2);
+        color: #ffc45c;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      #panel h2 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+      #panel p {
+        margin: 0 0 10px;
+        color: #bbb;
+      }
+      #panel small {
+        color: #667;
+        font-size: 11px;
+      }
     </style>
     <!-- Local dev build of the library (run `npm run dev` from the repo root) -->
     <script src="./fps.js" defer></script>
@@ -61,10 +176,15 @@
   <body>
     <div id="info">
       <b>Parallax POC — 7-layer scene</b><br />
-      Drag to pan / scroll to zoom.
+      Drag to pan / scroll to zoom.<br />
+      Click a numbered window to open it.
       <table id="layerTable"></table>
     </div>
     <micr-io></micr-io>
+    <!-- POI badges are positioned in element-relative pixels by camera.getXY, so this
+         overlay must sit exactly on top of the micr-io element (both are full-viewport). -->
+    <div id="pois"></div>
+    <aside id="panel" hidden></aside>
 
     <script type="module">
       customElements.whenDefined("micr-io").then(async () => {
@@ -94,51 +214,84 @@
           tileExtension: ext,
         });
 
-        // Depth-ordered layers (back to front — this is Z-depth order from the original
-        // 3D scene, which puts `snow` behind `door`/`gates`, not the 0-6 filename order).
-        // `area` is [x0,y0,w,h] normalized to the CW x CH canvas (can extend past [0,1] —
-        // that's fine, and expected for layers wider than the visible frame so panning
-        // doesn't reveal empty edges). `area` is derived directly from the original 3D
-        // scene's per-node (x,y,z,width,height), calibrated against the `gradient` plane
-        // (the true full-canvas background, z=0).
+        // `area` is [x0,y0,w,h] normalized to the CW x CH canvas.
         //
-        // `parallax` is 1 + z*0.5, not 1 + z. Panning isn't the only thing that moves the
-        // view center — zooming toward an off-center point re-centers on it too, and at
-        // high zoom the camera can legally drift much farther from center (the visible
-        // window is tiny relative to the canvas), so the same amplification that makes
-        // dragging feel parallax-y also flings high-factor layers off-screen once you're
-        // zoomed in and exploring off-center. Halving the z-derived range keeps the same
-        // relative depth ordering from the 3D data while keeping that amplification
-        // survivable; `restrict` below bounds it further at the source.
-        // Areas below are the same 3D-derived rects from before, re-projected onto the
-        // cropped CH=928 canvas (divide the CROP_FRAC=0.30 offset out — see crop-sky.py).
+        // Both `area` and `parallax` are derived mechanically from the three.js scene
+        // (mccal-demo/three-parallax.html + assets/scene.glb), so this demo matches it
+        // rather than approximating it. That scene is a perspective camera at z=8 looking
+        // at the origin, with every layer an X-rotated plane at its own z; each glb node
+        // gives a world-space rect (translation ± POSITION min/max × node scale).
+        //
+        // Perspective means a layer at depth z projects onto the z=0 backdrop plane
+        // magnified by  s = 8 / (8 - z)  — so its on-screen rect is its world rect scaled
+        // by s about the view axis. `area` is that projected rect expressed in the
+        // `gradient` plane's normalized coords (gradient is the true full-canvas backdrop
+        // at z=0, 7.891 x 11.131 world units, aspect 0.709 == 940/1326), then re-based
+        // onto the cropped CH=928 canvas by (v - 0.30) / 0.70 (see crop-sky.py).
+        // Rects extending past [0,1] are expected and correct: foreground layers really
+        // do overflow the frame in the 3D scene, and that's what keeps panning from
+        // revealing empty edges.
+        //
+        // `parallax` comes from the same depths: with MapControls' screen-space panning
+        // holding the target plane fixed, a camera translation d moves a layer at distance
+        // (8 - z) across the screen by d/(8-z) — which is exactly what Micrio's `parallax`
+        // scales (it multiplies the pan translation of the layer's projection matrix; see
+        // camera-2d.ts `_updateProjection`). Parallax 1 means "moves with the cursor 1:1",
+        // i.e. the layer that stays pinned under the pointer while you drag.
+        //
+        // The reference plane is the HOUSE, not the backdrop: factors are
+        // (8 - z_house) / (8 - z) with z_house = 1.0327, so the house is exactly 1.0 and
+        // doesn't slide out from under the mouse while dragging. Everything behind it
+        // (trees) is therefore below 1, everything in front above 1. Picking the backdrop
+        // as the reference instead would give 8/(8-z) — the same ratios scaled by 1.148,
+        // which drags the house at 1.15x the cursor.
+        //
+        // Note these are all much gentler than the earlier hand-tuned 1 + z*0.5 guesses
+        // (0.92–1.25 vs 1.23–2.22), which also removes the old problem of high-factor
+        // layers being flung off-screen when zoomed in and exploring off-center.
+        //
+        // The base `sky` image stays at 1.0 rather than its true 0.871. It *is* the canvas,
+        // exactly frame-width at min zoom with no horizontal margin, so panning it slower
+        // than the camera would pull its edge into view. Consequence: sky and house sit at
+        // the same apparent depth. If that separation is wanted, keep the base sky at 1.0
+        // as a gap filler and add the gradient a second time as an embed with parallax
+        // 0.871 and an area overscaled ~15% past [0,1] to give it margin to move in.
+        //
+        // Depth-ordered back to front — this is z order, which puts `snow` behind
+        // `door`/`gates`, not the 0-6 filename order.
         const layers = [
-          // id        w     h     area [x0, y0, w, h]                              parallax  label
-          ["trees", 940, 1326, [0.035, -0.3886, 0.9317, 1.331], 1.234, "trees"],
-          ["house", 1762, 626, [-0.1282, 0.3506, 1.1397, 0.41], 1.517, "house"],
+          // id        w     h     area [x0, y0, w, h]                      parallax  label
+          // trees   z=0.4667 — behind the house, so < 1
+          ["trees", 940, 1326, [0.0061, -0.4332, 0.9894, 1.4135], 0.925, "trees"],
+          // house   z=1.0327 — reference plane, pinned to the cursor
+          ["house", 1762, 626, [-0.2217, 0.3535, 1.3086, 0.4708], 1.0, "house"],
+          // snow    z=1.3025
           [
             "snow",
             1207,
             198,
-            [-0.0034, 0.8163, 0.9649, 0.1603],
-            1.651,
+            [-0.1016, 0.9104, 1.1525, 0.1915],
+            1.04,
             "snow drift",
           ],
-          ["door", 1721, 550, [0.0066, 0.538, 1.02, 0.3301], 1.786, "door"],
+          // door    z=1.5723
+          ["door", 1721, 550, [-0.1146, 0.5885, 1.2696, 0.4109], 1.084, "door"],
+          // gates   z=2.1118
           [
             "gates",
             1073,
             290,
-            [0.2161, 0.6493, 0.5856, 0.1603],
-            2.056,
+            [0.1135, 0.7631, 0.7957, 0.2178],
+            1.183,
             "gate posts",
           ],
+          // snowman z=2.4463
           [
             "snowman",
             241,
             252,
-            [0.5739, 0.7159, 0.1078, 0.1143],
-            2.223,
+            [0.6055, 0.8849, 0.1553, 0.1644],
+            1.255,
             "snowman",
           ],
         ];
@@ -154,7 +307,19 @@
             // screen can already require scaling past native res, which (at the
             // default limit) collapses min/max zoom to a single locked point and makes
             // pan/zoom appear broken.
-            zoomLimit: 4,
+            //
+            // It also caps how far the window POIs can actually zoom in: `_maxScale` is
+            // clamped to this value in camera-2d.ts, so a zoomLimit of 4 on a wide
+            // viewport can't reach the padded window rect below (which needs a scale of
+            // roughly viewportWidth / 260) and the fly-to silently stops short. 8 covers
+            // the framing on displays up to ~2000px wide.
+            //
+            // The ceiling here is the source art, not the engine: the house layer is
+            // 1762px across ~1230 canvas px (~1.43 house px per canvas px), so a tight
+            // window framing upscales it ~4x and will look soft. Re-export the house
+            // layer at higher resolution, or tile it properly, if crisp window close-ups
+            // matter.
+            zoomLimit: 8,
           },
         });
 
@@ -175,9 +340,140 @@
           });
           table.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${label}</td><td class="n">${parallax.toFixed(2)}</td></tr>`,
+            `<tr><td>${label}${parallax === 1 ? " (ref)" : ""}</td><td class="n">${parallax.toFixed(2)}</td></tr>`,
           );
         }
+
+        // ── Points of interest: the house's four windows ──────────────────────────
+        //
+        // Rects were detected from 2-house.png (1762x626) by clustering its amber
+        // window-glass pixels, then mapped through the house layer's `area` into canvas
+        // coords:  canvas = area.xy0 + (px / imageSize) * area.wh.
+        //
+        // These are anchored in plain base-canvas coordinates, with no parallax handling
+        // of their own — which is exact *because* the house is the parallax reference at
+        // 1.0. Base-canvas coords and the house layer pan and zoom identically, so the
+        // badges stay welded to their windows. POIs on any other layer would drift by
+        // (layerParallax - 1) x the pan offset and would need the layer's parallax applied
+        // to their screen position, so keep POIs on the reference layer, or make whichever
+        // layer you want to annotate the 1.0 reference.
+        //
+        // `content` mirrors the four `windows[].position` entries in
+        // mccal-demo/assets/data-model.json (deal / teaser / easterEgg / placeholder),
+        // numbered in reading order.
+        const pois = [
+          {
+            n: 1,
+            rect: [0.0991, 0.5099, 0.2061, 0.5821],
+            type: "deal",
+            title: "Donken Meals for 50 SEK",
+            body: "Come back to unlock this gift",
+            label: "Friday",
+          },
+          {
+            n: 2,
+            rect: [0.8062, 0.5159, 0.9072, 0.5821],
+            type: "teaser",
+            title: "A Home Alone Themed Cup",
+            body: "Come back to unlock this gift",
+            label: "Coming soon",
+          },
+          {
+            n: 3,
+            rect: [0.0991, 0.6543, 0.2061, 0.7446],
+            type: "easterEgg",
+            title: "It is Hamburglar!",
+            body: "Tap to see who is there — keep exploring",
+            label: "Easter egg",
+          },
+          {
+            n: 4,
+            rect: [0.8121, 0.6543, 0.9072, 0.7446],
+            type: "placeholder",
+            title: "Nothing to see here",
+            body: "Keep exploring",
+            label: "Empty",
+          },
+        ];
+
+        const poiLayer = document.getElementById("pois");
+        const panel = document.getElementById("panel");
+        let openPoi = null;
+
+        // How much facade to keep around a window when zoomed in, as a fraction of the
+        // window's own size added to each side. 0.8 => the framed rect is 2.6x the window,
+        // so the window itself fills ~38% of the frame width — close enough to read as
+        // "opened", with enough brick around it to stay oriented. Raise for a wider
+        // establishing shot, lower to fill the frame with glass (and check `zoomLimit`
+        // above can still reach it).
+        const ZOOM_PAD = 0.8;
+
+        /** Window rect [x0,y0,x1,y1] -> padded Micrio view [x, y, w, h]. */
+        const framedView = ([x0, y0, x1, y1]) => {
+          const w = x1 - x0,
+            h = y1 - y0;
+          // NOTE the two rect conventions in play: `poi.rect` (and the detection math
+          // above) is [x0, y0, x1, y1] — two corners — whereas both `flyToView` and the
+          // `area` argument of `addEmbed` want [x, y, WIDTH, HEIGHT]; see toCenterJSON in
+          // src/utils/math.ts. Passing corners where a size is expected reads x1/y1 as
+          // w/h and flies the camera to a plausible-looking but wrong place.
+          return [
+            x0 - w * ZOOM_PAD,
+            y0 - h * ZOOM_PAD,
+            w * (1 + 2 * ZOOM_PAD),
+            h * (1 + 2 * ZOOM_PAD),
+          ];
+        };
+
+        for (const poi of pois) {
+          const [x0, y0, x1, y1] = poi.rect;
+          poi.cx = (x0 + x1) / 2;
+          poi.cy = (y0 + y1) / 2;
+          poi.view = framedView(poi.rect);
+
+          const btn = document.createElement("button");
+          btn.className = "poi";
+          btn.dataset.type = poi.type;
+          btn.textContent = poi.n;
+          btn.setAttribute("aria-label", `Window ${poi.n}: ${poi.title}`);
+          btn.addEventListener("click", () => {
+            openPoi = openPoi === poi ? null : poi;
+            render();
+            if (openPoi) image.camera.flyToView(poi.view, { speed: 1.4 });
+            else image.camera.flyToFullView({ speed: 1.4 });
+          });
+          poiLayer.appendChild(btn);
+          poi.el = btn;
+        }
+
+        // Reposition every POI whenever the view changes. `camera.getXY` returns
+        // element-relative CSS pixels (plus the current scale in [2]); badges keep a
+        // constant screen size so they stay comfortable hit targets at any zoom.
+        function render() {
+          for (const poi of pois) {
+            const [px, py] = image.camera.getXY(poi.cx, poi.cy);
+            poi.el.style.transform = `translate(${px}px, ${py}px) translate(-50%, -50%)`;
+            poi.el.classList.toggle("open", openPoi === poi);
+          }
+          if (!openPoi) {
+            panel.hidden = true;
+          } else {
+            panel.hidden = false;
+            panel.innerHTML =
+              `<span class="tag">${openPoi.label}</span>` +
+              `<h2>${openPoi.title}</h2><p>${openPoi.body}</p>` +
+              `<small>window ${openPoi.n} · ${openPoi.type}</small>`;
+          }
+        }
+
+        image.state.view.subscribe(render);
+        render();
+
+        panel.addEventListener("click", () => {
+          openPoi = null;
+          render();
+          image.camera.flyToFullView({ speed: 1.4 });
+        });
 
         window.__demoImage = image; // for console poking
       });
