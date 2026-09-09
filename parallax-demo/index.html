@@ -52,88 +52,12 @@
         color: #9cf;
         text-align: right;
       }
-
-      /* Window markers.
-         `tags: ['window']` on the marker data becomes a classname on the
-         <micrio-marker> element (marker.ts:333), which is the library's intended
-         styling hook — so all of this is plain CSS over Micrio's own elements.
-
-         The hit area is a real area, not a fixed screen box: each marker sets
-         `data: { scales: true }`, which makes moved() publish a `--scale` custom
-         property (marker.ts:115) that marker.css:5 already applies as
-         scale3d(var(--scale)). So a width in CSS px is effectively a width in
-         *canvas* px and tracks the artwork through zoom. Per-window sizes are
-         emitted as `button#<id>` rules from the marker data further down. */
-      micrio-marker.window button {
-        all: unset;
-        display: block;
-        box-sizing: border-box;
-        border-radius: 3px;
-        cursor: pointer;
-        /* Invisible by default — the artwork is the affordance. */
-        background: transparent;
-        outline: 1.5px solid transparent;
-        transition:
-          background 0.18s,
-          outline-color 0.18s;
-      }
-      micrio-marker.window:is(:hover, .opened) button {
-        background: rgba(255, 196, 92, 0.22);
-        outline-color: rgba(255, 196, 92, 0.9);
-      }
-      /* A small constant-size dot so the windows read as interactive. Counter-scaled
-         by 1/--scale, the same trick marker.css:87 uses to keep labels legible
-         inside a scaling marker. */
-      micrio-marker.window button::after {
-        content: "";
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 9px;
-        height: 9px;
-        margin: -4.5px 0 0 -4.5px;
-        border-radius: 50%;
-        background: #ffc45c;
-        box-shadow: 0 0 0 2px rgba(10, 14, 25, 0.55);
-        transform: scale3d(
-          calc(1 / var(--scale, 1)),
-          calc(1 / var(--scale, 1)),
-          1
-        );
-        transition: opacity 0.18s;
-      }
-      micrio-marker.window:is(:hover, .opened) button::after {
-        opacity: 0;
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        micrio-marker.window button::after {
-          animation: markerPulse 2.6s ease-out infinite;
-        }
-      }
-      @keyframes markerPulse {
-        0%,
-        100% {
-          box-shadow: 0 0 0 2px rgba(10, 14, 25, 0.55);
-        }
-        50% {
-          box-shadow:
-            0 0 0 2px rgba(10, 14, 25, 0.55),
-            0 0 0 7px rgba(255, 196, 92, 0.25);
-        }
-      }
     </style>
     <script src="./fps.js" defer></script>
-    <!-- Two ways to load the library, both from `npm run dev` at the repo root:
-         - `../src/main.ts` — the TS source. No build step, HMR, readable stack traces.
-           Use this for working on the demo or the engine.
-         - `/dist/micrio.min.js` — the bundled production build. Needed to catch things
-           that only break once terser has mangled the output (see the fix in 4e528d1,
-           where `_isPassiveSecondary` was being stripped). Requires `npm run build`
-           first; `node bundle.js` writes it to `public/dist/`.
-         NOTE the path is `/dist/...`, not `../public/dist/...`: `public/` is Vite's
-         publicDir and is served at the root, so the `public/` segment must be dropped. -->
+    <!-- Swap to /dist/micrio.min.js (after `npm run build`) to test the mangled
+         production bundle. Note `/dist/`, not `../public/dist/` — public/ is Vite's
+         publicDir, served at the root. -->
     <script type="module" src="../src/main.ts"></script>
-    <!-- <script type="module" src="/dist/micrio.min.js"></script> -->
   </head>
   <body>
     <div id="info">
@@ -142,15 +66,8 @@
       Click a lit window to open it.
       <table id="layerTable"></table>
     </div>
-    <!-- data-ui="markers" is the library's markers-only escape hatch: main.ts:246 reads
-         this attribute literally (`showMarkers = !noHTML || attr == 'markers'`), so
-         markers and their popups render while `noUI: true` keeps every other UI element
-         off — no zoom controls, minimap, toolbar or logo. It survives alongside
-         `noUI: true` because the boolean attribute parser only acts on '', 'true' and
-         'false' (element.ts:693); any other value returns undefined and leaves the
-         setting untouched. (If you ever want the full UI *minus* the zoom controls
-         instead, that's the `noControls` setting — main.ts:249 — though note it also
-         suppresses the minimap, main.ts:252.) -->
+    <!-- data-ui="markers" renders markers only, with noUI keeping all other chrome off
+         (main.ts:246). -->
     <micr-io data-ui="markers"></micr-io>
 
     <script type="module">
@@ -158,113 +75,40 @@
         const micrio = document.querySelector("micr-io");
         const tileBase = new URL("./tiles/", location.href).href;
 
-        // Canvas coordinate space is defined by the base ("sky") image. The original
-        // gradient.png is 940x1326, but its top 30% is empty sky with the whole scene
-        // crowded into the bottom — the visible tile here is a pre-cropped 940x928 (see
-        // process-snow.py's sibling crop in the tile generation), which centers the house
-        // in the default framing without needing a runtime `view` override (a custom
-        // `view` more zoomed-in than minScale is fragile — see git history of this file).
+        // Canvas space is the base "sky" image: gradient.png pre-cropped to its bottom
+        // 70% (940x1326 -> 940x928), which centres the house at default framing.
         const CW = 940,
           CH = 928;
 
-        /** @param {string} id @param {number} w @param {number} h @param {string} ext */
         const info = (id, w, h, ext = "png") => ({
           id,
           path: tileBase,
           version: "7.1.2",
           width: w,
           height: h,
-          // Larger than width/height * underzoomLevels, so this always resolves to a
-          // single, non-tiled layer (0/0-0.<ext>) regardless of engine defaults.
-          tileSize: 20000,
+          tileSize: 20000, // big enough to always resolve to one untiled layer
           isSingle: true,
           tileExtension: ext,
         });
 
-        // `area` is [x0,y0,w,h] normalized to the CW x CH canvas.
-        //
-        // Both `area` and `parallax` are derived mechanically from the three.js scene
-        // (mccal-demo/three-parallax.html + assets/scene.glb), so this demo matches it
-        // rather than approximating it. That scene is a perspective camera at z=8 looking
-        // at the origin, with every layer an X-rotated plane at its own z; each glb node
-        // gives a world-space rect (translation ± POSITION min/max × node scale).
-        //
-        // Perspective means a layer at depth z projects onto the z=0 backdrop plane
-        // magnified by  s = 8 / (8 - z)  — so its on-screen rect is its world rect scaled
-        // by s about the view axis. `area` is that projected rect expressed in the
-        // `gradient` plane's normalized coords (gradient is the true full-canvas backdrop
-        // at z=0, 7.891 x 11.131 world units, aspect 0.709 == 940/1326), then re-based
-        // onto the cropped CH=928 canvas by (v - 0.30) / 0.70 (see crop-sky.py).
-        // Rects extending past [0,1] are expected and correct: foreground layers really
-        // do overflow the frame in the 3D scene, and that's what keeps panning from
-        // revealing empty edges.
-        //
-        // `parallax` comes from the same depths: with MapControls' screen-space panning
-        // holding the target plane fixed, a camera translation d moves a layer at distance
-        // (8 - z) across the screen by d/(8-z) — which is exactly what Micrio's `parallax`
-        // scales (it multiplies the pan translation of the layer's projection matrix; see
-        // camera-2d.ts `_updateProjection`). Parallax 1 means "moves with the cursor 1:1",
-        // i.e. the layer that stays pinned under the pointer while you drag.
-        //
-        // The reference plane is the HOUSE, not the backdrop: factors are
-        // (8 - z_house) / (8 - z) with z_house = 1.0327, so the house is exactly 1.0 and
-        // doesn't slide out from under the mouse while dragging. Everything behind it
-        // (trees) is therefore below 1, everything in front above 1. Picking the backdrop
-        // as the reference instead would give 8/(8-z) — the same ratios scaled by 1.148,
-        // which drags the house at 1.15x the cursor.
-        //
-        // Note these are all much gentler than the earlier hand-tuned 1 + z*0.5 guesses
-        // (0.92–1.25 vs 1.23–2.22), which also removes the old problem of high-factor
-        // layers being flung off-screen when zoomed in and exploring off-center.
-        //
-        // The base `sky` image stays at 1.0 rather than its true 0.871. It *is* the canvas,
-        // exactly frame-width at min zoom with no horizontal margin, so panning it slower
-        // than the camera would pull its edge into view. Consequence: sky and house sit at
-        // the same apparent depth. If that separation is wanted, keep the base sky at 1.0
-        // as a gap filler and add the gradient a second time as an embed with parallax
-        // 0.871 and an area overscaled ~15% past [0,1] to give it margin to move in.
-        //
-        // Depth-ordered back to front — this is z order, which puts `snow` behind
-        // `door`/`gates`, not the 0-6 filename order.
+        // Derived from the three.js scene (mccal-demo/assets/scene.glb): a perspective
+        // camera at z=8 with each layer an X-rotated plane at its own z. `area` is the
+        // node's world rect magnified by 8/(8-z) and projected onto the gradient plane,
+        // then rebased onto the cropped canvas. `parallax` is (8-z_house)/(8-z), so the
+        // house is 1.0 and stays put under the cursor. Ordered back to front by z.
+        // Areas past [0,1] are correct — foreground layers overflow the frame.
         const layers = [
-          // id        w     h     area [x0, y0, w, h]                      parallax  label
-          // trees   z=0.4667 — behind the house, so < 1
+          // id      w     h     area [x, y, w, h]                        parallax  label
           ["trees", 940, 1326, [0.0061, -0.4332, 0.9894, 1.4135], 0.925, "trees"],
-          // house   z=1.0327 — reference plane, pinned to the cursor
           ["house", 1762, 626, [-0.2217, 0.3535, 1.3086, 0.4708], 1.0, "house"],
-          // snow    z=1.3025
-          [
-            "snow",
-            1207,
-            198,
-            [-0.1016, 0.9104, 1.1525, 0.1915],
-            1.04,
-            "snow drift",
-          ],
-          // door    z=1.5723
+          ["snow", 1207, 198, [-0.1016, 0.9104, 1.1525, 0.1915], 1.04, "snow drift"],
           ["door", 1721, 550, [-0.1146, 0.5885, 1.2696, 0.4109], 1.084, "door"],
-          // gates   z=2.1118
-          [
-            "gates",
-            1073,
-            290,
-            [0.1135, 0.7631, 0.7957, 0.2178],
-            1.183,
-            "gate posts",
-          ],
-          // snowman z=2.4463
-          [
-            "snowman",
-            241,
-            252,
-            [0.6055, 0.8849, 0.1553, 0.1644],
-            1.255,
-            "snowman",
-          ],
+          ["gates", 1073, 290, [0.1135, 0.7631, 0.7957, 0.2178], 1.183, "gate posts"],
+          ["snowman", 241, 252, [0.6055, 0.8849, 0.1553, 0.1644], 1.255, "snowman"],
         ];
 
-        // How far past the canvas edges the camera may roam, as a fraction of the canvas.
-        // Asymmetric on purpose — see the `restrict` note below.
+        // How far past the canvas edges the camera may roam. Generous above (only sky),
+        // slim below (panning past the edge shows the underside of the snow).
         const PAN_PAD = { x: 0.18, top: 0.25, bottom: 0.08 };
 
         const image = await micrio.open({
@@ -273,69 +117,21 @@
           settings: {
             noUI: true,
             noLogo: true,
-            // zoomLimit: raise the default 1x-native-resolution cap. The base image
-            // here is only 940x1326px; on a large/Retina display, just *fitting* it on
-            // screen can already require scaling past native res, which (at the
-            // default limit) collapses min/max zoom to a single locked point and makes
-            // pan/zoom appear broken.
-            //
-            // It also caps how far the window POIs can actually zoom in: `_maxScale` is
-            // clamped to this value in camera-2d.ts, so a zoomLimit of 4 on a wide
-            // viewport can't reach the padded window rect below (which needs a scale of
-            // roughly viewportWidth / 260) and the fly-to silently stops short. 8 covers
-            // the framing on displays up to ~2000px wide.
-            //
-            // The ceiling here is the source art, not the engine: the house layer is
-            // 1762px across ~1230 canvas px (~1.43 house px per canvas px), so a tight
-            // window framing upscales it ~4x and will look soft. Re-export the house
-            // layer at higher resolution, or tile it properly, if crisp window close-ups
-            // matter.
+            // 1x native res is too low here: fitting a 940px image on a Retina display
+            // already needs upscaling, and the marker fly-to below needs ~6x. The art is
+            // the real ceiling — the house layer upscales ~4x at that framing.
             zoomLimit: 8,
-            // Fly back to the previous view when a marker closes, instead of staying
-            // zoomed in (markers.ts:186 stores `_openedView` and restores it). This
-            // replaces the demo's own flyToFullView-on-close.
-            //
-            // `_markers` is underscore-prefixed but safe to set from outside the
-            // library: it's one of three names explicitly exempted from the terser
-            // property mangler (vite.config.js:112, /^_(?!markers$|360$|meta$)/)
-            // precisely because it arrives as external JSON.
             _markers: { zoomOutAfterClose: true },
-
-            // Breathing room around the house.
-            //
-            // Without these the demo opens pinned at minimum zoom, where the view *is*
-            // the whole canvas — so dragging does nothing at all and the only way to
-            // move is to zoom in first. Two settings fix that, both public
-            // (info.ts:144, :198):
-            //
-            // `view` is the starting viewport: a centred 82% of the canvas, which leaves
-            // ~18% of slack to drag into straight away and still lets you zoom back out
-            // to the full scene. Its width and height are equal fractions so the rect
-            // keeps the canvas aspect and frames predictably on any screen. Centred
-            // slightly below middle (0.60) because the scene sits in the lower half —
-            // the sky above the roof is empty gradient.
-            //
-            // `restrict` (info.ts:146) is the navigation bounds. Despite the name it is
-            // not limited to *narrowing* them: setLimit -> view._setLimit (shared.ts:140)
-            // stores the rect with no clamp to [0,1], and a limit wider than the image
-            // is side-effect free — the _coverScale correction at camera-2d.ts:158 only
-            // runs when the limit is narrower (`_lWidth < 1`), and _correctMinMax derives
-            // minScale from `focus`/canvas, not from the limit. So the camera stays
-            // properly bounded (it can't be yeeted into the void, and it still snaps
-            // back) while getting far more room than the canvas itself.
-            //
-            // Padding is deliberately asymmetric: generous above, where there is only
-            // sky, and slim below, where panning past the edge exposes the underside of
-            // the snow. The artwork doesn't extend into this margin yet, so the body's
-            // #050914 shows through at the extremes — that's a known graphics gap, not
-            // the camera misbehaving.
-            //
-            // (`freeMove` — info.ts:198 — is the other option here and matches the
-            // three.js reference, where MapControls pans unbounded. But it removes the
-            // bounds entirely rather than widening them, so the scene can be dragged
-            // fully off-screen with nothing pulling it back.)
             view: [0.09, 0.19, 0.82, 0.82],
-            restrict: [-PAN_PAD.x, -PAN_PAD.top, 1 + PAN_PAD.x * 2, 1 + PAN_PAD.top + PAN_PAD.bottom],
+            // Wide but real bounds. `restrict` isn't clamped to [0,1] and a limit wider
+            // than the image leaves zoom untouched (camera-2d.ts:158). The art doesn't
+            // reach into this margin yet, so the body background shows at the extremes.
+            restrict: [
+              -PAN_PAD.x,
+              -PAN_PAD.top,
+              1 + PAN_PAD.x * 2,
+              1 + PAN_PAD.top + PAN_PAD.bottom,
+            ],
           },
         });
 
@@ -346,10 +142,7 @@
         );
 
         for (const [id, w, h, area, parallax, label] of layers) {
-          // isPassiveSecondary: these are decorative parallax layers, not independently
-          // draggable/zoomable targets — without it, the drag/wheel hit-tester can resolve
-          // pointer events to an embed's (unbound) camera instead of the base image's.
-          const embed = image.addEmbed(info(id, w, h, "png"), {}, area, {
+          image.addEmbed(info(id, w, h, "png"), {}, area, {
             opacity: 1,
             parallax,
             isPassiveSecondary: true,
@@ -360,27 +153,10 @@
           );
         }
 
-        // ── Window markers ────────────────────────────────────────────────────────
-        //
-        // These are real Micrio markers, not a custom overlay: the library owns their
-        // positioning (marker.ts `moved`), the click, the fly-to `view`
-        // (marker.ts:161 -> flyToView), the popup, and the fly-back on close. Setting
-        // `image.data` is the intended entry point — markers.ts:175 watches that store
-        // and rebuilds, and main.ts:281 mounts the marker layer once markers exist.
-        //
-        // Rects were detected from 2-house.png (1762x626) by clustering its amber
-        // window-glass pixels, then mapped through the house layer's `area` into canvas
-        // coords:  canvas = area.xy0 + (px / imageSize) * area.wh.
-        //
-        // They need no parallax handling of their own, which is exact *because* the
-        // house is the parallax reference at 1.0: canvas coords and the house layer pan
-        // and zoom identically, so the markers stay welded to their windows. Markers on
-        // any other layer would drift by (layerParallax - 1) x the pan offset, since the
-        // marker layer only ever sees the base camera — so keep markers on the reference
-        // layer, or make whichever layer you want to annotate the 1.0 reference.
-        //
-        // Content mirrors the four `windows[].position` entries in
-        // mccal-demo/assets/data-model.json (deal / teaser / easterEgg / placeholder).
+        // Window rects, found by clustering the amber glass pixels in 2-house.png and
+        // mapping through the house layer's area. They need no parallax handling because
+        // the house is the 1.0 reference; markers on any other layer would drift.
+        // Content mirrors mccal-demo/assets/data-model.json's windows[].position.
         const windows = [
           {
             n: 1,
@@ -416,69 +192,37 @@
           },
         ];
 
-        // How much facade to keep around a window when zoomed in, as a fraction of the
-        // window's own size added to each side. 0.8 => the framed rect is 2.6x the
-        // window, so the window fills ~38% of the frame width — close enough to read as
-        // "opened", with enough brick around it to stay oriented. Raise for a wider
-        // establishing shot, lower to fill the frame with glass (and check `zoomLimit`
-        // above can still reach it).
+        // Facade kept around a window when zoomed in, per side, as a fraction of it.
         const ZOOM_PAD = 0.8;
 
-        const markers = [];
-        const sizeRules = [];
-
-        for (const w of windows) {
-          const [x0, y0, x1, y1] = w.rect;
-          const rw = x1 - x0,
-            rh = y1 - y0;
-          const id = `window-${w.n}`;
-
-          markers.push({
-            id,
-            // Marker anchor is the window's centre point.
-            x: (x0 + x1) / 2,
-            y: (y0 + y1) / 2,
-            // The viewport to fly to when opened. NOTE the two rect conventions in play:
-            // `rect` above is [x0, y0, x1, y1] — two corners — whereas a Camera.View and
-            // addEmbed's `area` are [x, y, WIDTH, HEIGHT] (toCenterJSON,
-            // src/utils/math.ts:27). Passing corners where a size is expected reads
-            // x1/y1 as w/h and flies the camera somewhere plausible but wrong.
-            view: [
-              x0 - rw * ZOOM_PAD,
-              y0 - rh * ZOOM_PAD,
-              rw * (1 + 2 * ZOOM_PAD),
-              rh * (1 + 2 * ZOOM_PAD),
-            ],
-            tags: ["window"],
-            // scales: true makes the marker track the artwork through zoom rather than
-            // holding a fixed screen size — see the CSS note at the top of the file.
-            data: { scales: true, showTitle: false },
-            i18n: {
-              en: {
-                title: w.title,
-                body: `<p>${w.body}</p><p><small>window ${w.n} · ${w.type}</small></p>`,
-                label: w.label,
+        image.data.set({
+          markers: windows.map((w) => {
+            const [x0, y0, x1, y1] = w.rect;
+            const rw = x1 - x0,
+              rh = y1 - y0;
+            return {
+              id: `window-${w.n}`,
+              x: (x0 + x1) / 2,
+              y: (y0 + y1) / 2,
+              // A view is [x, y, w, h], not two corners.
+              view: [
+                x0 - rw * ZOOM_PAD,
+                y0 - rh * ZOOM_PAD,
+                rw * (1 + 2 * ZOOM_PAD),
+                rh * (1 + 2 * ZOOM_PAD),
+              ],
+              type: "default",
+              data: { showTitle: false },
+              i18n: {
+                en: {
+                  title: w.title,
+                  body: `<p>${w.body}</p><p><small>window ${w.n} · ${w.type}</small></p>`,
+                  label: w.label,
+                },
               },
-            },
-          });
-
-          // Size each hit area to its own window, in canvas px. marker.ts puts the
-          // marker id on the <button>, so this addresses it directly.
-          sizeRules.push(
-            `micrio-marker.window button#${id}{width:${(rw * CW).toFixed(1)}px;height:${(rh * CH).toFixed(1)}px}`,
-          );
-        }
-
-        document.head.appendChild(
-          Object.assign(document.createElement("style"), {
-            textContent: sizeRules.join("\n"),
+            };
           }),
-        );
-
-        // The intended way to supply markers programmatically: `image.data` is a public
-        // writable store (image.ts:56). Language key matches micrio's default 'en'
-        // (element.ts:594).
-        image.data.set({ markers });
+        });
 
         window.__demoImage = image; // for console poking
       });
