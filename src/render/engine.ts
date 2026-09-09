@@ -718,10 +718,11 @@ export class Engine {
 		isEmbed: boolean = false,
 		opacity: number = 1,
 		fromScale?: number,
+		parallax: number = 1,
 	): void => {
 		if (this._book3d) return;
 		this.#images.push(image);
-		this.#placeOnCanvas(image, parent, isEmbed, opacity, fromScale);
+		this.#placeOnCanvas(image, parent, isEmbed, opacity, fromScale, parallax);
 	}
 
 	/** @internal */
@@ -731,6 +732,7 @@ export class Engine {
 		isEmbed: boolean,
 		opacity: number,
 		fromScale?: number,
+		parallax: number = 1,
 	): void => {
 		const i = '$info' in image ? image.$info : parent.$info;
 		if (!i) return;
@@ -756,7 +758,7 @@ export class Engine {
 			canvas = parentEntry.canvas._addChild(a[0], a[1], a[0] + a[2], a[1] + a[3], i.width, i.height, childOpts);
 			canvas._micrioImage = image;
 		} else {
-			const engImage = parentEntry.canvas._addImage(a[0], a[1], a[0] + a[2], a[1] + a[3], i.width, i.height, i.tileSize ?? DEFAULT_TILE_SIZE, i.isSingle ?? false, i.isDeepZoom ?? false, i.isVideo ?? false, opacity, _360.rotX ?? 0, _360.rotY ?? 0, _360.rotZ ?? 0, _360.scale ?? 1, fromScale ?? 0);
+			const engImage = parentEntry.canvas._addImage(a[0], a[1], a[0] + a[2], a[1] + a[3], i.width, i.height, i.tileSize ?? DEFAULT_TILE_SIZE, i.isSingle ?? false, i.isDeepZoom ?? false, i.isVideo ?? false, opacity, _360.rotX ?? 0, _360.rotY ?? 0, _360.rotZ ?? 0, _360.scale ?? 1, fromScale ?? 0, parallax);
 			this.#engImageToMicrio.set(engImage, image);
 			this.#micrioToEngImage.set(image, engImage);
 			image._placed = true;
@@ -787,7 +789,7 @@ export class Engine {
 	_addEmbed(image: MicrioImage | Models.Omni.Frame, parent: MicrioImage, opts: Models.Embeds.EmbedOptions = {}): Promise<void> | void {
 		if (this._book3d) return;
 		if (image._placed) return;
-		this.#addImage(image, parent, true, opts.opacity ?? 1, 'camera' in image && opts.asImage ? undefined : opts.fromScale);
+		this.#addImage(image, parent, true, opts.opacity ?? 1, 'camera' in image && opts.asImage ? undefined : opts.fromScale, opts.parallax ?? 1);
 	}
 
 	/** Add a child independent canvas to the current canvas. @internal */

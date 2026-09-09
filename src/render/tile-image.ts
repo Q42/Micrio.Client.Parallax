@@ -164,6 +164,10 @@ export default class Image {
 	_rotZ: number;
 	readonly #scale: number;
 	readonly #fromScale: number;
+	/** Parallax factor for 2D panning: 1 = moves with camera 1:1, <1 = background, >1 = foreground. @internal */
+	readonly _parallax: number;
+	/** Lazily-computed, parallax-scaled projection matrix, used instead of the canvas's shared matrix when _parallax !== 1. @internal */
+	_parallaxMatrix?: Mat4;
 
 	constructor(
 		canvas: TileCanvas,
@@ -182,7 +186,8 @@ export default class Image {
 		rotY: number,
 		rotZ: number,
 		scale: number,
-		fromScale: number
+		fromScale: number,
+		parallax: number = 1
 	) {
 		this.#canvas = canvas;
 		this._index = index;
@@ -200,6 +205,7 @@ export default class Image {
 		this._rotZ = rotZ;
 		this.#scale = scale;
 		this.#fromScale = fromScale;
+		this._parallax = parallax;
 		const maxi = (width > height ? width : height);
 		this.#is360Embed = this.#canvas.is360 && this._localIdx > 0;
 

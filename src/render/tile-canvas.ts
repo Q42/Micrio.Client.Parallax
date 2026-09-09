@@ -36,6 +36,8 @@ export class TileCanvas {
 	/** Camera controller (Camera2D or Camera360 depending on is360). */
 	readonly camera!: EngineCamera;
 	readonly #rect: DrawRect = new DrawRect;
+	/** Tracks which image's parallax-scaled matrix is currently bound as GLMatrix, to avoid redundant uniform uploads. */
+	#boundParallaxImage?: Image;
 	/** Screen viewport dimensions for this canvas. */
 	readonly el: Viewport = new Viewport;
 
@@ -237,7 +239,7 @@ export class TileCanvas {
 	 */
 	_addImage(x0: number, y0: number, x1: number, y1: number, w: number, h: number,
 		tileSize: number, isSingle: boolean, isDeepZoom: boolean, isVideo: boolean,
-		opa: number, rotX: number = 0, rotY: number = 0, rotZ: number = 0, scale: number = 1, fromScale: number = 0): Image {
+		opa: number, rotX: number = 0, rotY: number = 0, rotZ: number = 0, scale: number = 1, fromScale: number = 0, parallax: number = 1): Image {
 		const image = new Image(
 			this,
 			this.main._numImages++,
@@ -245,7 +247,7 @@ export class TileCanvas {
 			w, h, tileSize,
 			isSingle, isDeepZoom, isVideo,
 			this.main._numTiles,
-			opa, opa, rotX, rotY, rotZ, scale, fromScale);
+			opa, opa, rotX, rotY, rotZ, scale, fromScale, parallax);
 		image._setArea(x0, y0, x1, y1);
 		this.images.push(image);
 		this.main._numTiles = image._endOffset;
@@ -408,6 +410,7 @@ export class TileCanvas {
 		gl.gl.viewport(this.el.left, m.el.height - el.height - el.top, el.width, el.height);
 
 		gl.gl.uniformMatrix4fv(gl._pmLoc, false, this._camera360._pMatrix.arr);
+		this.#boundParallaxImage = undefined;
 
 		if (this.#pagesHaveBackground) for (let imgIdx = 0; imgIdx < this.images.length; imgIdx++) {
 			const im = this.images[imgIdx];
@@ -421,6 +424,17 @@ export class TileCanvas {
 		for (let j = 0; j < this._toDraw.length; j++) {
 			const i: number = this._toDraw[j];
 			this.#setTile(i);
+
+			if (!this.is360) {
+				const needsParallax = r.image._parallax !== 1 ? r.image : undefined;
+				// An embed added since the last pan/zoom/resize won't have its matrix built yet
+				if (needsParallax && !needsParallax._parallaxMatrix) this._camera2d._updateProjection();
+				if (needsParallax !== this.#boundParallaxImage) {
+					const matrix = needsParallax ? needsParallax._parallaxMatrix! : this._camera360._pMatrix;
+					gl.gl.uniformMatrix4fv(gl._pmLoc, false, matrix.arr);
+					this.#boundParallaxImage = needsParallax;
+				}
+			}
 
 			const isTargetLayer = r.layer === r.image._targetLayer - 1 || (!m._bareBone && r.layer === r.image._targetLayer);
 			const isBaseTile = i === r.image._endOffset - 1;

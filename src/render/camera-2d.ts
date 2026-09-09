@@ -445,5 +445,19 @@ export default class Camera2D extends EngineCamera {
 			v._centerY - .5,
 			-v.height / 2
 		);
+
+		// Recompute per-image parallax-scaled matrices for any embed with a non-default parallax factor.
+		// Only the pan translation is scaled, keeping perspective/zoom identical to the base matrix.
+		for (let i = 0; i < c.images.length; i++) {
+			const img = c.images[i];
+			if (img._parallax === 1) continue;
+			const pm = img._parallaxMatrix ?? (img._parallaxMatrix = new Mat4);
+			pm._perspective(cam._perspective, c.el._aspect, 0.0001, 100);
+			pm._translate(
+				-(v._centerX - .5) * c.aspect * img._parallax,
+				(v._centerY - .5) * img._parallax,
+				-v.height / 2
+			);
+		}
 	}
 }
