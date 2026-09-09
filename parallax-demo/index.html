@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+	<title>Micrio parallax demo — winter house</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, user-scalable=no">
+	<style>
+		html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #050914; }
+		micr-io { display: block; width: 100%; height: 100%; }
+		#info {
+			position: fixed; top: 12px; left: 12px; z-index: 1000;
+			background: rgba(10, 14, 25, 0.82); color: #eee;
+			font: 13px/1.5 -apple-system, sans-serif;
+			padding: 10px 14px; border-radius: 8px; max-width: 320px;
+			pointer-events: none;
+		}
+		#info b { color: #7fd0ff; }
+		#info table { border-collapse: collapse; margin-top: 6px; }
+		#info td { padding: 1px 8px 1px 0; font-size: 12px; color: #ccc; }
+		#info td.n { color: #9cf; text-align: right; }
+	</style>
+	<!-- Local dev build of the library (run `npm run dev` from the repo root) -->
+	<script type="module" src="../src/main.ts"></script>
+</head>
+<body>
+	<div id="info">
+		<b>Parallax POC — 7-layer scene</b><br>
+		Drag to pan / scroll to zoom.
+		<table id="layerTable"></table>
+	</div>
+	<micr-io></micr-io>
+
+	<script type="module">
+		customElements.whenDefined('micr-io').then(async () => {
+			const micrio = document.querySelector('micr-io');
+			const tileBase = new URL('./tiles/', location.href).href;
+
+			// Canvas coordinate space is defined by the base ("sky") image. The original
+			// gradient.png is 940x1326, but its top 30% is empty sky with the whole scene
+			// crowded into the bottom — the visible tile here is a pre-cropped 940x928 (see
+			// process-snow.py's sibling crop in the tile generation), which centers the house
+			// in the default framing without needing a runtime `view` override (a custom
+			// `view` more zoomed-in than minScale is fragile — see git history of this file).
+			const CW = 940, CH = 928;
+
+			/** @param {string} id @param {number} w @param {number} h @param {string} ext */
+			const info = (id, w, h, ext = 'png') => ({
+				id,
+				path: tileBase,
+				version: '7.1.2',
+				width: w,
+				height: h,
+				// Larger than width/height * underzoomLevels, so this always resolves to a
+				// single, non-tiled layer (0/0-0.<ext>) regardless of engine defaults.
+				tileSize: 20000,
+				isSingle: true,
+				tileExtension: ext,
+			});
+
+			// Depth-ordered layers (back to front — this is Z-depth order from the original
+			// 3D scene, which puts `snow` behind `door`/`gates`, not the 0-6 filename order).
+			// `area` is [x0,y0,w,h] normalized to the CW x CH canvas (can extend past [0,1] —
+			// that's fine, and expected for layers wider than the visible frame so panning
+			// doesn't reveal empty edges). `area` is derived directly from the original 3D
+			// scene's per-node (x,y,z,width,height), calibrated against the `gradient` plane
+			// (the true full-canvas background, z=0).
+			//
+			// `parallax` is 1 + z*0.5, not 1 + z. Panning isn't the only thing that moves the
+			// view center — zooming toward an off-center point re-centers on it too, and at
+			// high zoom the camera can legally drift much farther from center (the visible
+			// window is tiny relative to the canvas), so the same amplification that makes
+			// dragging feel parallax-y also flings high-factor layers off-screen once you're
+			// zoomed in and exploring off-center. Halving the z-derived range keeps the same
+			// relative depth ordering from the 3D data while keeping that amplification
+			// survivable; `restrict` below bounds it further at the source.
+			// Areas below are the same 3D-derived rects from before, re-projected onto the
+			// cropped CH=928 canvas (divide the CROP_FRAC=0.30 offset out — see crop-sky.py).
+			const layers = [
+				// id        w     h     area [x0, y0, w, h]                              parallax  label
+				['trees',    940,  1326, [0.0350, -0.3886, 0.9317, 1.3310],                1.234,  'trees'],
+				['house',    1762, 626,  [-0.1282, 0.3506, 1.1397, 0.4100],                1.517,  'house'],
+				['snow',     1207, 198,  [-0.0034, 0.8163, 0.9649, 0.1603],                1.651,  'snow drift'],
+				['door',     1721, 550,  [0.0066, 0.5380, 1.0200, 0.3301],                 1.786,  'door'],
+				['gates',    1073, 290,  [0.2161, 0.6493, 0.5856, 0.1603],                 2.056,  'gate posts'],
+				['snowman',  241,  252,  [0.5739, 0.7159, 0.1078, 0.1143],                 2.223,  'snowman'],
+			];
+
+			const image = await micrio.open({
+				id: 'sky',
+				info: info('sky', CW, CH, 'png'),
+				settings: {
+					noUI: true, noLogo: true,
+					// zoomLimit: raise the default 1x-native-resolution cap. The base image
+					// here is only 940x1326px; on a large/Retina display, just *fitting* it on
+					// screen can already require scaling past native res, which (at the
+					// default limit) collapses min/max zoom to a single locked point and makes
+					// pan/zoom appear broken.
+					zoomLimit: 4,
+				},
+			});
+
+			const table = document.getElementById('layerTable');
+			table.insertAdjacentHTML('beforeend', `<tr><td>sky (base)</td><td class="n">1.00</td></tr>`);
+
+			for (const [id, w, h, area, parallax, label] of layers) {
+				const embed = image.addEmbed(info(id, w, h, 'png'), {}, area, { opacity: 1, parallax });
+				// Decorative parallax layers, not independently draggable/zoomable targets —
+				// without this, the drag/wheel hit-tester can resolve pointer events to an
+				// embed's (unbound) camera instead of the base image's.
+				embed._isPassiveSecondary = true;
+				table.insertAdjacentHTML('beforeend', `<tr><td>${label}</td><td class="n">${parallax.toFixed(2)}</td></tr>`);
+			}
+
+			window.__demoImage = image; // for console poking
+		});
+	</script>
+</body>
+</html>
