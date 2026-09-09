@@ -789,6 +789,7 @@ export class Engine {
 	_addEmbed(image: MicrioImage | Models.Omni.Frame, parent: MicrioImage, opts: Models.Embeds.EmbedOptions = {}): Promise<void> | void {
 		if (this._book3d) return;
 		if (image._placed) return;
+		if (opts.isPassiveSecondary && 'camera' in image) image._isPassiveSecondary = true;
 		this.#addImage(image, parent, true, opts.opacity ?? 1, 'camera' in image && opts.asImage ? undefined : opts.fromScale, opts.parallax ?? 1);
 	}
 

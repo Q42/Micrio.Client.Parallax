@@ -55,7 +55,8 @@
     </style>
     <!-- Local dev build of the library (run `npm run dev` from the repo root) -->
     <script src="./fps.js" defer></script>
-    <script type="module" src="../src/main.ts"></script>
+    <!-- <script type="module" src="../src/main.ts"></script> -->
+    <script type="module" src="../public/dist/micrio.min.js"></script>
   </head>
   <body>
     <div id="info">
@@ -164,14 +165,14 @@
         );
 
         for (const [id, w, h, area, parallax, label] of layers) {
+          // isPassiveSecondary: these are decorative parallax layers, not independently
+          // draggable/zoomable targets — without it, the drag/wheel hit-tester can resolve
+          // pointer events to an embed's (unbound) camera instead of the base image's.
           const embed = image.addEmbed(info(id, w, h, "png"), {}, area, {
             opacity: 1,
             parallax,
+            isPassiveSecondary: true,
           });
-          // Decorative parallax layers, not independently draggable/zoomable targets —
-          // without this, the drag/wheel hit-tester can resolve pointer events to an
-          // embed's (unbound) camera instead of the base image's.
-          embed._isPassiveSecondary = true;
           table.insertAdjacentHTML(
             "beforeend",
             `<tr><td>${label}</td><td class="n">${parallax.toFixed(2)}</td></tr>`,

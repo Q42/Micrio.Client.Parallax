@@ -10,5 +10,7 @@ export namespace Embeds {
     fit?: "contain" | "cover" | "stretch";
     /** Parallax factor for panning within a 2D image: 1 (default) moves with the camera 1:1, <1 moves slower (background), >1 moves faster (foreground) */
     parallax?: number;
+    /** Exclude this embed from pointer hit-testing (drag/zoom targeting), so it acts as a decorative, non-interactive layer */
+    isPassiveSecondary?: boolean;
   }
 }
