@@ -53,119 +53,73 @@
         text-align: right;
       }
 
-      /* POI overlay — transparent to pointer events so drag/zoom still reaches the
-         canvas; only the badges themselves are clickable. */
-      #pois {
-        position: fixed;
-        inset: 0;
-        pointer-events: none;
-        z-index: 500;
-      }
-      .poi {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 34px;
-        height: 34px;
-        margin: 0;
-        padding: 0;
-        border: 2px solid rgba(255, 255, 255, 0.85);
-        border-radius: 50%;
-        background: rgba(12, 18, 32, 0.55);
-        backdrop-filter: blur(4px);
-        -webkit-backdrop-filter: blur(4px);
-        color: #fff;
-        font:
-          600 15px/1 -apple-system,
-          sans-serif;
+      /* Window markers.
+         `tags: ['window']` on the marker data becomes a classname on the
+         <micrio-marker> element (marker.ts:333), which is the library's intended
+         styling hook — so all of this is plain CSS over Micrio's own elements.
+
+         The hit area is a real area, not a fixed screen box: each marker sets
+         `data: { scales: true }`, which makes moved() publish a `--scale` custom
+         property (marker.ts:115) that marker.css:5 already applies as
+         scale3d(var(--scale)). So a width in CSS px is effectively a width in
+         *canvas* px and tracks the artwork through zoom. Per-window sizes are
+         emitted as `button#<id>` rules from the marker data further down. */
+      micrio-marker.window button {
+        all: unset;
+        display: block;
+        box-sizing: border-box;
+        border-radius: 3px;
         cursor: pointer;
-        pointer-events: auto;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
-        /* No transition on `transform` — it's the per-frame position, and easing it
-           would make badges lag behind the artwork while panning. */
+        /* Invisible by default — the artwork is the affordance. */
+        background: transparent;
+        outline: 1.5px solid transparent;
         transition:
           background 0.18s,
-          box-shadow 0.18s;
+          outline-color 0.18s;
       }
-      .poi:hover {
-        background: rgba(255, 196, 92, 0.9);
-        color: #1a1206;
+      micrio-marker.window:is(:hover, .opened) button {
+        background: rgba(255, 196, 92, 0.22);
+        outline-color: rgba(255, 196, 92, 0.9);
       }
-      .poi.open {
-        background: #ffc45c;
-        color: #1a1206;
-        border-color: #fff;
-        box-shadow: 0 0 0 6px rgba(255, 196, 92, 0.25);
-      }
-      /* A soft pulse so the badges read as "there is something here" */
-      .poi::after {
+      /* A small constant-size dot so the windows read as interactive. Counter-scaled
+         by 1/--scale, the same trick marker.css:87 uses to keep labels legible
+         inside a scaling marker. */
+      micrio-marker.window button::after {
         content: "";
         position: absolute;
-        inset: -2px;
+        top: 50%;
+        left: 50%;
+        width: 9px;
+        height: 9px;
+        margin: -4.5px 0 0 -4.5px;
         border-radius: 50%;
-        border: 2px solid rgba(255, 196, 92, 0.75);
-        animation: poiPulse 2.6s ease-out infinite;
-        pointer-events: none;
+        background: #ffc45c;
+        box-shadow: 0 0 0 2px rgba(10, 14, 25, 0.55);
+        transform: scale3d(
+          calc(1 / var(--scale, 1)),
+          calc(1 / var(--scale, 1)),
+          1
+        );
+        transition: opacity 0.18s;
       }
-      .poi.open::after {
-        display: none;
+      micrio-marker.window:is(:hover, .opened) button::after {
+        opacity: 0;
       }
-      @keyframes poiPulse {
-        0% {
-          transform: scale(1);
-          opacity: 0.75;
+      @media (prefers-reduced-motion: no-preference) {
+        micrio-marker.window button::after {
+          animation: markerPulse 2.6s ease-out infinite;
         }
-        70%,
+      }
+      @keyframes markerPulse {
+        0%,
         100% {
-          transform: scale(1.85);
-          opacity: 0;
+          box-shadow: 0 0 0 2px rgba(10, 14, 25, 0.55);
         }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        .poi::after {
-          animation: none;
+        50% {
+          box-shadow:
+            0 0 0 2px rgba(10, 14, 25, 0.55),
+            0 0 0 7px rgba(255, 196, 92, 0.25);
         }
-      }
-
-      #panel {
-        position: fixed;
-        right: 16px;
-        bottom: 16px;
-        z-index: 1000;
-        width: 260px;
-        padding: 16px 18px;
-        border-radius: 12px;
-        background: rgba(10, 14, 25, 0.9);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        color: #eee;
-        font:
-          14px/1.5 -apple-system,
-          sans-serif;
-        cursor: pointer;
-      }
-      #panel .tag {
-        display: inline-block;
-        margin-bottom: 8px;
-        padding: 2px 8px;
-        border-radius: 99px;
-        background: rgba(255, 196, 92, 0.2);
-        color: #ffc45c;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-      }
-      #panel h2 {
-        margin: 0 0 6px;
-        font-size: 16px;
-      }
-      #panel p {
-        margin: 0 0 10px;
-        color: #bbb;
-      }
-      #panel small {
-        color: #667;
-        font-size: 11px;
       }
     </style>
     <script src="./fps.js" defer></script>
@@ -185,14 +139,19 @@
     <div id="info">
       <b>Parallax POC — 7-layer scene</b><br />
       Drag to pan / scroll to zoom.<br />
-      Click a numbered window to open it.
+      Click a lit window to open it.
       <table id="layerTable"></table>
     </div>
-    <micr-io></micr-io>
-    <!-- POI badges are positioned in element-relative pixels by camera.getXY, so this
-         overlay must sit exactly on top of the micr-io element (both are full-viewport). -->
-    <div id="pois"></div>
-    <aside id="panel" hidden></aside>
+    <!-- data-ui="markers" is the library's markers-only escape hatch: main.ts:246 reads
+         this attribute literally (`showMarkers = !noHTML || attr == 'markers'`), so
+         markers and their popups render while `noUI: true` keeps every other UI element
+         off — no zoom controls, minimap, toolbar or logo. It survives alongside
+         `noUI: true` because the boolean attribute parser only acts on '', 'true' and
+         'false' (element.ts:693); any other value returns undefined and leaves the
+         setting untouched. (If you ever want the full UI *minus* the zoom controls
+         instead, that's the `noControls` setting — main.ts:249 — though note it also
+         suppresses the minimap, main.ts:252.) -->
+    <micr-io data-ui="markers"></micr-io>
 
     <script type="module">
       customElements.whenDefined("micr-io").then(async () => {
@@ -328,6 +287,15 @@
             // layer at higher resolution, or tile it properly, if crisp window close-ups
             // matter.
             zoomLimit: 8,
+            // Fly back to the previous view when a marker closes, instead of staying
+            // zoomed in (markers.ts:186 stores `_openedView` and restores it). This
+            // replaces the demo's own flyToFullView-on-close.
+            //
+            // `_markers` is underscore-prefixed but safe to set from outside the
+            // library: it's one of three names explicitly exempted from the terser
+            // property mangler (vite.config.js:112, /^_(?!markers$|360$|meta$)/)
+            // precisely because it arrives as external JSON.
+            _markers: { zoomOutAfterClose: true },
           },
         });
 
@@ -352,24 +320,28 @@
           );
         }
 
-        // ── Points of interest: the house's four windows ──────────────────────────
+        // ── Window markers ────────────────────────────────────────────────────────
+        //
+        // These are real Micrio markers, not a custom overlay: the library owns their
+        // positioning (marker.ts `moved`), the click, the fly-to `view`
+        // (marker.ts:161 -> flyToView), the popup, and the fly-back on close. Setting
+        // `image.data` is the intended entry point — markers.ts:175 watches that store
+        // and rebuilds, and main.ts:281 mounts the marker layer once markers exist.
         //
         // Rects were detected from 2-house.png (1762x626) by clustering its amber
         // window-glass pixels, then mapped through the house layer's `area` into canvas
         // coords:  canvas = area.xy0 + (px / imageSize) * area.wh.
         //
-        // These are anchored in plain base-canvas coordinates, with no parallax handling
-        // of their own — which is exact *because* the house is the parallax reference at
-        // 1.0. Base-canvas coords and the house layer pan and zoom identically, so the
-        // badges stay welded to their windows. POIs on any other layer would drift by
-        // (layerParallax - 1) x the pan offset and would need the layer's parallax applied
-        // to their screen position, so keep POIs on the reference layer, or make whichever
-        // layer you want to annotate the 1.0 reference.
+        // They need no parallax handling of their own, which is exact *because* the
+        // house is the parallax reference at 1.0: canvas coords and the house layer pan
+        // and zoom identically, so the markers stay welded to their windows. Markers on
+        // any other layer would drift by (layerParallax - 1) x the pan offset, since the
+        // marker layer only ever sees the base camera — so keep markers on the reference
+        // layer, or make whichever layer you want to annotate the 1.0 reference.
         //
-        // `content` mirrors the four `windows[].position` entries in
-        // mccal-demo/assets/data-model.json (deal / teaser / easterEgg / placeholder),
-        // numbered in reading order.
-        const pois = [
+        // Content mirrors the four `windows[].position` entries in
+        // mccal-demo/assets/data-model.json (deal / teaser / easterEgg / placeholder).
+        const windows = [
           {
             n: 1,
             rect: [0.0991, 0.5099, 0.2061, 0.5821],
@@ -404,84 +376,69 @@
           },
         ];
 
-        const poiLayer = document.getElementById("pois");
-        const panel = document.getElementById("panel");
-        let openPoi = null;
-
         // How much facade to keep around a window when zoomed in, as a fraction of the
-        // window's own size added to each side. 0.8 => the framed rect is 2.6x the window,
-        // so the window itself fills ~38% of the frame width — close enough to read as
+        // window's own size added to each side. 0.8 => the framed rect is 2.6x the
+        // window, so the window fills ~38% of the frame width — close enough to read as
         // "opened", with enough brick around it to stay oriented. Raise for a wider
         // establishing shot, lower to fill the frame with glass (and check `zoomLimit`
         // above can still reach it).
         const ZOOM_PAD = 0.8;
 
-        /** Window rect [x0,y0,x1,y1] -> padded Micrio view [x, y, w, h]. */
-        const framedView = ([x0, y0, x1, y1]) => {
-          const w = x1 - x0,
-            h = y1 - y0;
-          // NOTE the two rect conventions in play: `poi.rect` (and the detection math
-          // above) is [x0, y0, x1, y1] — two corners — whereas both `flyToView` and the
-          // `area` argument of `addEmbed` want [x, y, WIDTH, HEIGHT]; see toCenterJSON in
-          // src/utils/math.ts. Passing corners where a size is expected reads x1/y1 as
-          // w/h and flies the camera to a plausible-looking but wrong place.
-          return [
-            x0 - w * ZOOM_PAD,
-            y0 - h * ZOOM_PAD,
-            w * (1 + 2 * ZOOM_PAD),
-            h * (1 + 2 * ZOOM_PAD),
-          ];
-        };
+        const markers = [];
+        const sizeRules = [];
 
-        for (const poi of pois) {
-          const [x0, y0, x1, y1] = poi.rect;
-          poi.cx = (x0 + x1) / 2;
-          poi.cy = (y0 + y1) / 2;
-          poi.view = framedView(poi.rect);
+        for (const w of windows) {
+          const [x0, y0, x1, y1] = w.rect;
+          const rw = x1 - x0,
+            rh = y1 - y0;
+          const id = `window-${w.n}`;
 
-          const btn = document.createElement("button");
-          btn.className = "poi";
-          btn.dataset.type = poi.type;
-          btn.textContent = poi.n;
-          btn.setAttribute("aria-label", `Window ${poi.n}: ${poi.title}`);
-          btn.addEventListener("click", () => {
-            openPoi = openPoi === poi ? null : poi;
-            render();
-            if (openPoi) image.camera.flyToView(poi.view, { speed: 1.4 });
-            else image.camera.flyToFullView({ speed: 1.4 });
+          markers.push({
+            id,
+            // Marker anchor is the window's centre point.
+            x: (x0 + x1) / 2,
+            y: (y0 + y1) / 2,
+            // The viewport to fly to when opened. NOTE the two rect conventions in play:
+            // `rect` above is [x0, y0, x1, y1] — two corners — whereas a Camera.View and
+            // addEmbed's `area` are [x, y, WIDTH, HEIGHT] (toCenterJSON,
+            // src/utils/math.ts:27). Passing corners where a size is expected reads
+            // x1/y1 as w/h and flies the camera somewhere plausible but wrong.
+            view: [
+              x0 - rw * ZOOM_PAD,
+              y0 - rh * ZOOM_PAD,
+              rw * (1 + 2 * ZOOM_PAD),
+              rh * (1 + 2 * ZOOM_PAD),
+            ],
+            tags: ["window"],
+            // scales: true makes the marker track the artwork through zoom rather than
+            // holding a fixed screen size — see the CSS note at the top of the file.
+            data: { scales: true, showTitle: false },
+            i18n: {
+              en: {
+                title: w.title,
+                body: `<p>${w.body}</p><p><small>window ${w.n} · ${w.type}</small></p>`,
+                label: w.label,
+              },
+            },
           });
-          poiLayer.appendChild(btn);
-          poi.el = btn;
+
+          // Size each hit area to its own window, in canvas px. marker.ts puts the
+          // marker id on the <button>, so this addresses it directly.
+          sizeRules.push(
+            `micrio-marker.window button#${id}{width:${(rw * CW).toFixed(1)}px;height:${(rh * CH).toFixed(1)}px}`,
+          );
         }
 
-        // Reposition every POI whenever the view changes. `camera.getXY` returns
-        // element-relative CSS pixels (plus the current scale in [2]); badges keep a
-        // constant screen size so they stay comfortable hit targets at any zoom.
-        function render() {
-          for (const poi of pois) {
-            const [px, py] = image.camera.getXY(poi.cx, poi.cy);
-            poi.el.style.transform = `translate(${px}px, ${py}px) translate(-50%, -50%)`;
-            poi.el.classList.toggle("open", openPoi === poi);
-          }
-          if (!openPoi) {
-            panel.hidden = true;
-          } else {
-            panel.hidden = false;
-            panel.innerHTML =
-              `<span class="tag">${openPoi.label}</span>` +
-              `<h2>${openPoi.title}</h2><p>${openPoi.body}</p>` +
-              `<small>window ${openPoi.n} · ${openPoi.type}</small>`;
-          }
-        }
+        document.head.appendChild(
+          Object.assign(document.createElement("style"), {
+            textContent: sizeRules.join("\n"),
+          }),
+        );
 
-        image.state.view.subscribe(render);
-        render();
-
-        panel.addEventListener("click", () => {
-          openPoi = null;
-          render();
-          image.camera.flyToFullView({ speed: 1.4 });
-        });
+        // The intended way to supply markers programmatically: `image.data` is a public
+        // writable store (image.ts:56). Language key matches micrio's default 'en'
+        // (element.ts:594).
+        image.data.set({ markers });
 
         window.__demoImage = image; // for console poking
       });
