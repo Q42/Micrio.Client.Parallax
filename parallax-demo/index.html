@@ -168,10 +168,18 @@
         font-size: 11px;
       }
     </style>
-    <!-- Local dev build of the library (run `npm run dev` from the repo root) -->
     <script src="./fps.js" defer></script>
-    <!-- <script type="module" src="../src/main.ts"></script> -->
-    <script type="module" src="../public/dist/micrio.min.js"></script>
+    <!-- Two ways to load the library, both from `npm run dev` at the repo root:
+         - `../src/main.ts` — the TS source. No build step, HMR, readable stack traces.
+           Use this for working on the demo or the engine.
+         - `/dist/micrio.min.js` — the bundled production build. Needed to catch things
+           that only break once terser has mangled the output (see the fix in 4e528d1,
+           where `_isPassiveSecondary` was being stripped). Requires `npm run build`
+           first; `node bundle.js` writes it to `public/dist/`.
+         NOTE the path is `/dist/...`, not `../public/dist/...`: `public/` is Vite's
+         publicDir and is served at the root, so the `public/` segment must be dropped. -->
+    <script type="module" src="../src/main.ts"></script>
+    <!-- <script type="module" src="/dist/micrio.min.js"></script> -->
   </head>
   <body>
     <div id="info">
