@@ -53,95 +53,63 @@
         text-align: right;
       }
     </style>
-    <!-- Local dev build of the library (run `npm run dev` from the repo root) -->
     <script src="./fps.js" defer></script>
-    <!-- <script type="module" src="../src/main.ts"></script> -->
-    <script type="module" src="../public/dist/micrio.min.js"></script>
+    <!-- Swap to /dist/micrio.min.js (after `npm run build`) to test the mangled
+         production bundle. Note `/dist/`, not `../public/dist/` — public/ is Vite's
+         publicDir, served at the root. -->
+    <script type="module" src="../src/main.ts"></script>
   </head>
   <body>
     <div id="info">
       <b>Parallax POC — 7-layer scene</b><br />
-      Drag to pan / scroll to zoom.
+      Drag to pan / scroll to zoom.<br />
+      Click a lit window to open it.
       <table id="layerTable"></table>
     </div>
-    <micr-io></micr-io>
+    <!-- data-ui="markers" renders markers only, with noUI keeping all other chrome off
+         (main.ts:246). -->
+    <micr-io data-ui="markers"></micr-io>
 
     <script type="module">
       customElements.whenDefined("micr-io").then(async () => {
         const micrio = document.querySelector("micr-io");
         const tileBase = new URL("./tiles/", location.href).href;
 
-        // Canvas coordinate space is defined by the base ("sky") image. The original
-        // gradient.png is 940x1326, but its top 30% is empty sky with the whole scene
-        // crowded into the bottom — the visible tile here is a pre-cropped 940x928 (see
-        // process-snow.py's sibling crop in the tile generation), which centers the house
-        // in the default framing without needing a runtime `view` override (a custom
-        // `view` more zoomed-in than minScale is fragile — see git history of this file).
+        // Canvas space is the base "sky" image: gradient.png pre-cropped to its bottom
+        // 70% (940x1326 -> 940x928), which centres the house at default framing.
         const CW = 940,
           CH = 928;
 
-        /** @param {string} id @param {number} w @param {number} h @param {string} ext */
         const info = (id, w, h, ext = "png") => ({
           id,
           path: tileBase,
           version: "7.1.2",
           width: w,
           height: h,
-          // Larger than width/height * underzoomLevels, so this always resolves to a
-          // single, non-tiled layer (0/0-0.<ext>) regardless of engine defaults.
-          tileSize: 20000,
+          tileSize: 20000, // big enough to always resolve to one untiled layer
           isSingle: true,
           tileExtension: ext,
         });
 
-        // Depth-ordered layers (back to front — this is Z-depth order from the original
-        // 3D scene, which puts `snow` behind `door`/`gates`, not the 0-6 filename order).
-        // `area` is [x0,y0,w,h] normalized to the CW x CH canvas (can extend past [0,1] —
-        // that's fine, and expected for layers wider than the visible frame so panning
-        // doesn't reveal empty edges). `area` is derived directly from the original 3D
-        // scene's per-node (x,y,z,width,height), calibrated against the `gradient` plane
-        // (the true full-canvas background, z=0).
-        //
-        // `parallax` is 1 + z*0.5, not 1 + z. Panning isn't the only thing that moves the
-        // view center — zooming toward an off-center point re-centers on it too, and at
-        // high zoom the camera can legally drift much farther from center (the visible
-        // window is tiny relative to the canvas), so the same amplification that makes
-        // dragging feel parallax-y also flings high-factor layers off-screen once you're
-        // zoomed in and exploring off-center. Halving the z-derived range keeps the same
-        // relative depth ordering from the 3D data while keeping that amplification
-        // survivable; `restrict` below bounds it further at the source.
-        // Areas below are the same 3D-derived rects from before, re-projected onto the
-        // cropped CH=928 canvas (divide the CROP_FRAC=0.30 offset out — see crop-sky.py).
+        // Derived from the three.js scene (mccal-demo/assets/scene.glb): a perspective
+        // camera at z=8 with each layer an X-rotated plane at its own z. `area` is the
+        // node's world rect magnified by 8/(8-z) and projected onto the gradient plane,
+        // then rebased onto the cropped canvas. `parallax` is (8-z_house)/(8-z), so the
+        // house is 1.0 and stays put under the cursor. Ordered back to front by z.
+        // Areas past [0,1] are correct — foreground layers overflow the frame.
         const layers = [
-          // id        w     h     area [x0, y0, w, h]                              parallax  label
-          ["trees", 940, 1326, [0.035, -0.3886, 0.9317, 1.331], 1.234, "trees"],
-          ["house", 1762, 626, [-0.1282, 0.3506, 1.1397, 0.41], 1.517, "house"],
-          [
-            "snow",
-            1207,
-            198,
-            [-0.0034, 0.8163, 0.9649, 0.1603],
-            1.651,
-            "snow drift",
-          ],
-          ["door", 1721, 550, [0.0066, 0.538, 1.02, 0.3301], 1.786, "door"],
-          [
-            "gates",
-            1073,
-            290,
-            [0.2161, 0.6493, 0.5856, 0.1603],
-            2.056,
-            "gate posts",
-          ],
-          [
-            "snowman",
-            241,
-            252,
-            [0.5739, 0.7159, 0.1078, 0.1143],
-            2.223,
-            "snowman",
-          ],
+          // id      w     h     area [x, y, w, h]                        parallax  label
+          ["trees", 940, 1326, [0.0061, -0.4332, 0.9894, 1.4135], 0.925, "trees"],
+          ["house", 1762, 626, [-0.2217, 0.3535, 1.3086, 0.4708], 1.0, "house"],
+          ["snow", 1207, 198, [-0.1016, 0.9104, 1.1525, 0.1915], 1.04, "snow drift"],
+          ["door", 1721, 550, [-0.1146, 0.5885, 1.2696, 0.4109], 1.084, "door"],
+          ["gates", 1073, 290, [0.1135, 0.7631, 0.7957, 0.2178], 1.183, "gate posts"],
+          ["snowman", 241, 252, [0.6055, 0.8849, 0.1553, 0.1644], 1.255, "snowman"],
         ];
+
+        // How far past the canvas edges the camera may roam. Generous above (only sky),
+        // slim below (panning past the edge shows the underside of the snow).
+        const PAN_PAD = { x: 0.18, top: 0.25, bottom: 0.08 };
 
         const image = await micrio.open({
           id: "sky",
@@ -149,12 +117,21 @@
           settings: {
             noUI: true,
             noLogo: true,
-            // zoomLimit: raise the default 1x-native-resolution cap. The base image
-            // here is only 940x1326px; on a large/Retina display, just *fitting* it on
-            // screen can already require scaling past native res, which (at the
-            // default limit) collapses min/max zoom to a single locked point and makes
-            // pan/zoom appear broken.
-            zoomLimit: 4,
+            // 1x native res is too low here: fitting a 940px image on a Retina display
+            // already needs upscaling, and the marker fly-to below needs ~6x. The art is
+            // the real ceiling — the house layer upscales ~4x at that framing.
+            zoomLimit: 8,
+            _markers: { zoomOutAfterClose: true },
+            view: [0.09, 0.19, 0.82, 0.82],
+            // Wide but real bounds. `restrict` isn't clamped to [0,1] and a limit wider
+            // than the image leaves zoom untouched (camera-2d.ts:158). The art doesn't
+            // reach into this margin yet, so the body background shows at the extremes.
+            restrict: [
+              -PAN_PAD.x,
+              -PAN_PAD.top,
+              1 + PAN_PAD.x * 2,
+              1 + PAN_PAD.top + PAN_PAD.bottom,
+            ],
           },
         });
 
@@ -165,19 +142,87 @@
         );
 
         for (const [id, w, h, area, parallax, label] of layers) {
-          // isPassiveSecondary: these are decorative parallax layers, not independently
-          // draggable/zoomable targets — without it, the drag/wheel hit-tester can resolve
-          // pointer events to an embed's (unbound) camera instead of the base image's.
-          const embed = image.addEmbed(info(id, w, h, "png"), {}, area, {
+          image.addEmbed(info(id, w, h, "png"), {}, area, {
             opacity: 1,
             parallax,
             isPassiveSecondary: true,
           });
           table.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${label}</td><td class="n">${parallax.toFixed(2)}</td></tr>`,
+            `<tr><td>${label}${parallax === 1 ? " (ref)" : ""}</td><td class="n">${parallax.toFixed(2)}</td></tr>`,
           );
         }
+
+        // Window rects, found by clustering the amber glass pixels in 2-house.png and
+        // mapping through the house layer's area. They need no parallax handling because
+        // the house is the 1.0 reference; markers on any other layer would drift.
+        // Content mirrors mccal-demo/assets/data-model.json's windows[].position.
+        const windows = [
+          {
+            n: 1,
+            rect: [0.0991, 0.5099, 0.2061, 0.5821],
+            type: "deal",
+            title: "Donken Meals for 50 SEK",
+            body: "Come back to unlock this gift",
+            label: "Friday",
+          },
+          {
+            n: 2,
+            rect: [0.8062, 0.5159, 0.9072, 0.5821],
+            type: "teaser",
+            title: "A Home Alone Themed Cup",
+            body: "Come back to unlock this gift",
+            label: "Coming soon",
+          },
+          {
+            n: 3,
+            rect: [0.0991, 0.6543, 0.2061, 0.7446],
+            type: "easterEgg",
+            title: "It is Hamburglar!",
+            body: "Tap to see who is there — keep exploring",
+            label: "Easter egg",
+          },
+          {
+            n: 4,
+            rect: [0.8121, 0.6543, 0.9072, 0.7446],
+            type: "placeholder",
+            title: "Nothing to see here",
+            body: "Keep exploring",
+            label: "Empty",
+          },
+        ];
+
+        // Facade kept around a window when zoomed in, per side, as a fraction of it.
+        const ZOOM_PAD = 0.8;
+
+        image.data.set({
+          markers: windows.map((w) => {
+            const [x0, y0, x1, y1] = w.rect;
+            const rw = x1 - x0,
+              rh = y1 - y0;
+            return {
+              id: `window-${w.n}`,
+              x: (x0 + x1) / 2,
+              y: (y0 + y1) / 2,
+              // A view is [x, y, w, h], not two corners.
+              view: [
+                x0 - rw * ZOOM_PAD,
+                y0 - rh * ZOOM_PAD,
+                rw * (1 + 2 * ZOOM_PAD),
+                rh * (1 + 2 * ZOOM_PAD),
+              ],
+              type: "default",
+              data: { showTitle: false },
+              i18n: {
+                en: {
+                  title: w.title,
+                  body: `<p>${w.body}</p><p><small>window ${w.n} · ${w.type}</small></p>`,
+                  label: w.label,
+                },
+              },
+            };
+          }),
+        });
 
         window.__demoImage = image; // for console poking
       });
