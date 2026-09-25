@@ -8,7 +8,7 @@ searchable Knowledge Base at:
 ## Installation
 
 ```bash
-npm i @micrio/client
+npm i @micrio-parallax/client
 ```
 
 ## Usage
@@ -16,7 +16,7 @@ npm i @micrio/client
 Since the Micrio Client is a passive binding for all HTML `<micr-io>` elements, all you need to do to include Micrio in your project or page is:
 
 ```js
-import '@micrio/client'
+import "@micrio-parallax/client";
 ```
 
 ## Core build
@@ -31,21 +31,37 @@ the UI chrome is likewise excluded (the minimap's own visibility logic is kept),
 as is WebGL postprocessing and MDP/.bin archive loading.
 
 ```js
-import '@micrio/client/micrio.core.min.js'
+import "@micrio-parallax/client/micrio.core.min.js";
 ```
 
 Imagery whose data relies on an excluded feature will simply not render that
 feature rather than erroring out.
+
+## Parallax build (this fork's default)
+
+This fork (Micrio.Client.Parallax) adds a third variant, `micrio.parallax.min.js`,
+for consumers that need markers and image embeds (e.g. the parallax layers this
+fork exists for) but none of the other extended viewer types. It is the same as
+the core build above except markers, marker clustering, and waypoints are kept
+real rather than stubbed out. This is the default entrypoint for this fork —
+`import 'micrio-parallax'` resolves here. The full and core builds remain
+available as named subpaths:
+
+```js
+import "micrio-parallax"; // this build (markers + embeds, no tour/gallery/book/grid/audio/UI chrome)
+import "micrio-parallax/full"; // the complete upstream build
+import "micrio-parallax/core"; // upstream's tiled-image-only build (no markers)
+```
 
 ## Typed
 
 To get typed access to a Micrio HTML element, you can use the `HTMLMicrioElement` as exported by this package:
 
 ```ts
-import type { HTMLMicrioElement } from '@micrio/client';
+import type { HTMLMicrioElement } from "@micrio-parallax/client";
 
 // This will be a fully typed element
-const micrioElement = document.querySelector('micr-io') as HTMLMicrioElement;
+const micrioElement = document.querySelector("micr-io") as HTMLMicrioElement;
 ```
 
 ## Upgrading to the latest version (v7)

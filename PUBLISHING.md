@@ -4,7 +4,7 @@
 
 You need the [AWS CLI](https://aws.amazon.com/cli/) installed and configured with an R2 API token (set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`). Your Cloudflare account ID must be set via the `CLOUDFLARE_ACCOUNT_ID` environment variable. The script constructs both the default endpoint (`https://<id>.r2.cloudflarestorage.com`) and the EU jurisdiction endpoint (`https://<id>.eu.r2.cloudflarestorage.com`) automatically.
 
-You also need write access to the npm repository of `@micrio/client`.
+You also need write access to the npm repository of `@micrio-parallax/client`.
 
 To publish to both the hosted JS and NPM with an automatic version bump:
 

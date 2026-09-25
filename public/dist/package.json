@@ -1,5 +1,5 @@
 {
-	"name": "@micrio/client",
+	"name": "@micrio-parallax/client",
 	"version": "7.1.4",
 	"description": "Micrio Client image viewer",
 	"main": "micrio.min.js",
