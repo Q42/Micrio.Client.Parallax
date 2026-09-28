@@ -69,9 +69,10 @@ const coreStubAliases = [
 
 // Consumers (e.g. the parallax house scene) that use markers/embeds for
 // window hit-targets but none of the tour/gallery/book/grid/audio/UI-chrome
-// features can reuse the `core` stub list, keeping only marker support real.
-const markerStubFinds = new Set(['$markers/waypoint', '$markers/marker', '$markers/markers']);
-const parallaxStubAliases = coreStubAliases.filter(({ find }) => !markerStubFinds.has(find));
+// features can reuse the `core` stub list, keeping only marker and embed
+// support real.
+const parallaxKeepReal = new Set(['$markers/waypoint', '$markers/marker', '$markers/markers', '$embed/embed', '$embed/image-embeds']);
+const parallaxStubAliases = coreStubAliases.filter(({ find }) => !parallaxKeepReal.has(find));
 
 export default defineConfig(({ mode }) => {
 	const core = mode === 'minimal' || mode === 'parallax';
