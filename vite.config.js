@@ -67,14 +67,23 @@ const coreStubAliases = [
 	{ find: '$utils/archive', replacement: stub('archive.ts') },
 ];
 
+// Consumers (e.g. the parallax house scene) that use markers/embeds for
+// window hit-targets but none of the tour/gallery/book/grid/audio/UI-chrome
+// features can reuse the `core` stub list, keeping only marker and embed
+// support real.
+const parallaxKeepReal = new Set(['$markers/waypoint', '$markers/marker', '$markers/markers', '$embed/embed', '$embed/image-embeds']);
+const parallaxStubAliases = coreStubAliases.filter(({ find }) => !parallaxKeepReal.has(find));
+
 export default defineConfig(({ mode }) => {
-	const core = mode === 'minimal';
+	const core = mode === 'minimal' || mode === 'parallax';
+	const parallax = mode === 'parallax';
+	const suffix = parallax ? '.parallax' : core ? '.core' : '';
 
 	return {
 		plugins: [glslMinifyPlugin()],
 		resolve: {
 			alias: core
-				? [...coreStubAliases, ...Object.entries(defaultAliases).map(([find, replacement]) => ({ find, replacement }))]
+				? [...(parallax ? parallaxStubAliases : coreStubAliases), ...Object.entries(defaultAliases).map(([find, replacement]) => ({ find, replacement }))]
 				: defaultAliases,
 		},
 		define: {
@@ -119,13 +128,13 @@ export default defineConfig(({ mode }) => {
 		lib: {
 			entry: `./src/main.ts`,
 			name: 'Micrio',
-			fileName: core ? `micrio.prod.core` : `micrio.prod`,
+			fileName: `micrio.prod${suffix}`,
 			formats: ['iife']
 		},
 		rollupOptions: {
 			output: {
 
-				assetFileNames: () => `micrio.prod${core ? '.core' : ''}[extname]`
+				assetFileNames: () => `micrio.prod${suffix}[extname]`
 			}
 		}
 	}
