@@ -237,8 +237,8 @@ export class TileCanvas {
 	
 	#updateRenderOrder(): void {
 		this.#renderOrder.sort((a, b) => {
-			if (a._localIdx === 0) return -1;
-			if (b._localIdx === 0) return 1;
+			if (!this._noImage && a._localIdx === 0) return -1;
+			if (!this._noImage && b._localIdx === 0) return 1;
 
 			return a._parallax - b._parallax;
 		});
