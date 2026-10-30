@@ -43,6 +43,8 @@ export class TileCanvas {
 
 	/** Array of Image instances (tile sources) attached to this canvas. */
 	readonly images: Image[] = [];
+	/** Draw images back-to-front by parallax factor, keeping insertion order for ties. */
+	readonly #renderOrder: Image[] = [];
 
 	/** Cached diagonal (sqrt(w² + h²)), updated on resize. @internal */
 	_diagonal: number = 0;
@@ -232,6 +234,15 @@ export class TileCanvas {
 		this.parent = parent;
 		this.#index += parent.#children.length;
 	}
+	
+	#updateRenderOrder(): void {
+		this.#renderOrder.sort((a, b) => {
+			if (!this._noImage && a._localIdx === 0) return -1;
+			if (!this._noImage && b._localIdx === 0) return 1;
+
+			return a._parallax - b._parallax;
+		});
+	}
 
 	/**
 	 * Adds an image source (usually tiled) to this canvas.
@@ -250,6 +261,8 @@ export class TileCanvas {
 			opa, opa, rotX, rotY, rotZ, scale, fromScale, parallax);
 		image._setArea(x0, y0, x1, y1);
 		this.images.push(image);
+		this.#renderOrder.push(image);
+		this.#updateRenderOrder();
 		this.main._numTiles = image._endOffset;
 		if (this.images.length === 1) this._setActiveImage(0);
 		return image;
@@ -373,13 +386,13 @@ export class TileCanvas {
 
 		const m = this.main;
 
-		for (let i = 0; i < this.images.length; i++) {
-			const image = this.images[i];
+		for (let i = 0; i < this.#renderOrder.length; i++) {
+			const image = this.#renderOrder[i];
 			if (!image._shouldRender()) {
 				if (image._doRender) m._setImageVisible(image, image._doRender = false);
 			}
 			else {
-				if (i > 0 && !image._doRender) m._setImageVisible(image, image._doRender = true);
+				if (image._localIdx > 0 && !image._doRender) m._setImageVisible(image, image._doRender = true);
 				if (image._isVideo && image._isVideoPlaying) animating = true;
 				if (image._opacityTick(this.#isGallerySwitch || this._opacity < 1)) animating = true;
 				if (image.opacity > 0) m._doneTotal += image._getTiles(scale);
@@ -588,8 +601,12 @@ export class TileCanvas {
 		const r = this.#rect,
 			v = this.view;
 		const [imgIdx, lIdx] = this.#findTileRect(idx);
-		if (lIdx <= this.images[imgIdx]._targetLayer) return false;
-		return !(r.x1 <= v.x0 || r.x0 >= v.x1 || r.y1 <= v.y0 || r.y0 >= v.y1);
+		const image = this.images[imgIdx];
+		if (lIdx <= image._targetLayer) return false;
+		const xOffset = (image._parallax - 1) * (v._centerX - .5);
+		const yOffset = (image._parallax - 1) * (v._centerY - .5);
+		return !(r.x1 <= v.x0 + xOffset || r.x0 >= v.x1 + xOffset
+			|| r.y1 <= v.y0 + yOffset || r.y0 >= v.y1 + yOffset);
 	}
 
 	/** Handles resizing of the canvas element. @internal */

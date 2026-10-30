@@ -282,8 +282,19 @@ export default class Image {
 			return !this.#sphere3DOverlap();
 		} else {
 			const v = this.#canvas.view;
-			return this.x1 <= v.x0 || this.x0 >= v.x1 || this.y1 <= v.y0 || this.y0 >= v.y1;
+			const xOffset = this.#parallaxViewOffsetX();
+			const yOffset = this.#parallaxViewOffsetY();
+			return this.x1 <= v.x0 + xOffset || this.x0 >= v.x1 + xOffset
+				|| this.y1 <= v.y0 + yOffset || this.y0 >= v.y1 + yOffset;
 		}
+	}
+
+	#parallaxViewOffsetX(): number {
+		return this.#canvas.is360 ? 0 : (this._parallax - 1) * (this.#canvas.view._centerX - .5);
+	}
+
+	#parallaxViewOffsetY(): number {
+		return this.#canvas.is360 ? 0 : (this._parallax - 1) * (this.#canvas.view._centerY - .5);
 	}
 
 	/** Determines if this image should be rendered in the current frame. @internal */
@@ -353,9 +364,13 @@ export default class Image {
 			this.#doneTotal++;
 		} else if (c.visible.x0 < c.visible.x1 && c.visible.y0 < c.visible.y1) {
 			const v = c.view;
+			const xOffset = this.#parallaxViewOffsetX();
+			const yOffset = this.#parallaxViewOffsetY();
 			this.#getTilesRect(lIdx,
-				Math.max(c.visible.x0, v.x0), Math.max(c.visible.y0, v.y0),
-				Math.min(c.visible.x1, v.x1), Math.min(c.visible.y1, v.y1)
+				Math.max(c.visible.x0 + xOffset, v.x0 + xOffset),
+				Math.max(c.visible.y0 + yOffset, v.y0 + yOffset),
+				Math.min(c.visible.x1 + xOffset, v.x1 + xOffset),
+				Math.min(c.visible.y1 + yOffset, v.y1 + yOffset)
 			);
 		}
 
