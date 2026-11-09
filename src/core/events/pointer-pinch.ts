@@ -47,7 +47,7 @@ export class PointerPinchHandler {
 	 */
 	start = (e: PointerEvent): void => {
 		if (e.pointerType !== 'touch') return;
-		if (e.target != this.#ctx._el) return;
+		if (e.target != this.#ctx._el && !(e.target instanceof Element && e.target.closest('[data-scroll-through]'))) return;
 
 		this.#ctx._activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -99,4 +99,3 @@ export class PointerPinchHandler {
 		}
 	}
 }
-
