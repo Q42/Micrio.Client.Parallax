@@ -268,6 +268,8 @@ export namespace ImageData {
 
 		/** Optional title */
 		title?: string;
+		/** Accessible label for button embeds. Defaults to `embed-button` when omitted. */
+		ariaLabel?: string;
 
 		/** An optional Micrio ID */
 		micrioId?: string;

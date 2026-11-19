@@ -1,11 +1,26 @@
 {
-	"name": "@micrio/client-src",
+	"name": "@micrio-parallax/client-src",
 	"version": "7.1.4",
 	"description": "Micrio client image viewer source repository",
-	"main": "micrio.js",
 	"type": "module",
+	"exports": {
+		".": {
+			"types": "./public/dist/micrio.min.d.ts",
+			"default": "./public/dist/micrio.parallax.min.js"
+		},
+		"./full": {
+			"types": "./public/dist/micrio.min.d.ts",
+			"default": "./public/dist/micrio.min.js"
+		},
+		"./core": {
+			"types": "./public/dist/micrio.min.d.ts",
+			"default": "./public/dist/micrio.core.min.js"
+		}
+	},
+	"types": "./public/dist/micrio.min.d.ts",
 	"scripts": {
-		"build": "vite build && vite build --mode minimal && tsc -d --project tsconfig.docs.json --outFile out.d.ts && node bundle.js",
+		"prepare": "npm run build",
+		"build": "vite build && vite build --mode minimal && vite build --mode parallax && tsc -d --project tsconfig.docs.json --outFile out.d.ts && node bundle.js",
 		"build:grid": "node templates/grid/build-grid.js",
 		"dev": "vite --port 2000",
 		"publish": "node publish.js",
