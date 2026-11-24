@@ -244,12 +244,17 @@ export class Camera {
 
 	/**
 	 * Sets a rectangular limit for camera navigation within the image.
+	 * Refreshes 2D cover and zoom limits immediately using the current canvas dimensions.
 	 * @param v The viewport limit [x, y, width, height] in image-relative coordinates.
 	 */
 	setLimit(v: Models.Camera.View): void {
 		if (!this.#canvas) return;
 		const l = toCenterJSON(v)!;
 		this.#canvas.view._setLimit(l.centerX, l.centerY, l.width, l.height);
+		if (!this.#canvas.is360) {
+			this.#canvas._camera2d._setCanvas();
+			this.#canvas._camera2d._updateProjection();
+		}
 		this.#image.engine.render();
 	}
 
