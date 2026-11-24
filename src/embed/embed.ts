@@ -282,7 +282,7 @@ class MicrioEmbed extends MicrioElement<EmbedProps> {
 			createElement('button', {
 				props: title ? { title } : undefined,
 				style: this.#buttonStyle,
-				attrs: { 'data-scroll-through': '', 'aria-label': 'embed-button' },
+				attrs: { 'data-scroll-through': '', 'aria-label': embed.ariaLabel ?? 'embed-button' },
 				parent: this.#container
 			});
 		}

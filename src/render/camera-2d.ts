@@ -151,15 +151,8 @@ export default class Camera2D extends EngineCamera {
 		this.cph = cph;
 
 		this.#fullScale = Math.min(cpw, cph);
-		this._coverScale = Math.max(cpw, cph);
-
-		const lRat = c.view._lWidth / c.view._lHeight;
+		this._coverScale = Math.max(cpw / c.view._lWidth, cph / c.view._lHeight);
 		c.view._limitChanged = false;
-		if (c.view._lWidth < 1 || c.view._lHeight < 1) {
-			const rat = cpw / cph;
-			if (lRat < rat) this._coverScale /= c.view._lWidth / rat;
-			else this._coverScale /= c.view._lHeight * rat;
-		}
 
 		this._correctMinMax();
 
